@@ -152,12 +152,28 @@ class HomeWindow(QMainWindow):
         body_layout.setContentsMargins(30, 30, 30, 30)
         body_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        home_logo = QLabel(body)
+        home_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        home_logo_path = Path(__file__).resolve().parent / "assets" / "images" / "logo.svg"
+        home_pixmap = QPixmap(str(home_logo_path))
+        if not home_pixmap.isNull():
+            home_logo.setPixmap(
+                home_pixmap.scaled(
+                    110,
+                    110,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+
         start_button = QPushButton("Start Game", body)
         start_button.setObjectName("startButton")
         start_button.setFixedSize(190, 54)
         start_button.clicked.connect(self.close)
 
         body_layout.addStretch(1)
+        body_layout.addWidget(home_logo, alignment=Qt.AlignmentFlag.AlignCenter)
+        body_layout.addSpacing(18)
         body_layout.addWidget(start_button, alignment=Qt.AlignmentFlag.AlignCenter)
         body_layout.addStretch(1)
 
