@@ -120,8 +120,9 @@ class SplashScreen(QDialog):
 class BalloonLabel(QLabel):
     """A balloon-shaped label that reports clicks to the window."""
 
-    def __init__(self, size: int, color: str, parent: QWidget | None = None) -> None:
+    def __init__(self, size: int, color: str, parent: QWidget | None = None, is_bomb: bool = False) -> None:
         super().__init__(parent)
+        self._is_bomb = is_bomb
         self._body_color = QColor(color)
         self._balloon_width = size
         self._balloon_height = int(size * 1.35)
@@ -145,13 +146,14 @@ class BalloonLabel(QLabel):
         taper.lineTo(w * 0.54, body_h * 1.14)
         taper.cubicTo(w * 0.55, body_h * 1.10, w * 0.53, body_h * 1.02, w * 0.50, body_h * 0.96)
 
-        painter.setPen(QPen(QColor(255, 255, 255, 200), 2))
+        border_color = QColor(255, 255, 255, 200) if not self._is_bomb else QColor(210, 210, 210, 210)
+        painter.setPen(QPen(border_color, 2))
         painter.setBrush(self._body_color)
         painter.drawPath(path)
         painter.drawPath(taper)
 
         # small highlight to make the balloon feel glossy
-        highlight = QColor(255, 255, 255, 75)
+        highlight = QColor(255, 255, 255, 75) if not self._is_bomb else QColor(255, 255, 255, 30)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(highlight)
         painter.drawEllipse(int(w * 0.24), int(h * 0.16), int(w * 0.18), int(h * 0.18))
@@ -168,6 +170,15 @@ class BalloonLabel(QLabel):
         string_pen = QPen(QColor(255, 255, 255, 170), 1.4)
         painter.setPen(string_pen)
         painter.drawLine(int(w * 0.50), int(body_h + h * 0.10), int(w * 0.48), h - 2)
+
+        if self._is_bomb:
+            # use a skeleton emoji marker so bomb balloons are instantly recognizable
+            skeleton_font = QFont()
+            skeleton_font.setPointSize(max(10, int(w * 0.22)))
+            skeleton_font.setBold(True)
+            painter.setFont(skeleton_font)
+            painter.setPen(QColor(245, 245, 245, 230))
+            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "💀")
 
     def mousePressEvent(self, event) -> None:  # pop on click
         window = self.window()
@@ -255,6 +266,65 @@ class ConfirmDialog(QDialog):
         msg.show()
         cancel.show()
         confirm.show()
+
+
+class GameOverDialog(QDialog):
+    """Game-over card shown when a bomb balloon is clicked."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setFixedSize(330, 170)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        title = QLabel("Game Over", self)
+        title.setObjectName("gameOverTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tf = QFont()
+        tf.setPointSize(16)
+        tf.setBold(True)
+        title.setFont(tf)
+
+        msg = QLabel("Boom! You clicked a bomb balloon.", self)
+        msg.setObjectName("gameOverMsg")
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+
+        play_again = QPushButton("Play Again", self)
+        play_again.setObjectName("playAgainButton")
+        play_again.setFixedSize(118, 38)
+        play_again.clicked.connect(self.accept)
+
+        quit_btn = QPushButton("Quit", self)
+        quit_btn.setObjectName("gameOverQuitButton")
+        quit_btn.setFixedSize(96, 38)
+        quit_btn.clicked.connect(self.reject)
+
+        btn_row.addWidget(play_again)
+        btn_row.addSpacing(10)
+        btn_row.addWidget(quit_btn)
+        btn_row.addStretch(1)
+
+        layout.addWidget(title)
+        layout.addWidget(msg)
+        layout.addStretch(1)
+        layout.addLayout(btn_row)
+
+        self.setStyleSheet(
+            """
+            QDialog { background: rgba(255,255,255,0.98); border-radius: 14px; }
+            QLabel#gameOverTitle { color: #9b1c1c; }
+            QLabel#gameOverMsg { color: #083344; font-size: 13px; }
+            QPushButton#playAgainButton { background: #1e7e34; color: white; border-radius: 8px; }
+            QPushButton#gameOverQuitButton { background: #ffffff; color: #083344; border: 1px solid rgba(4,45,69,0.2); border-radius: 8px; }
+            """
+        )
 
 
 class HomeWindow(QMainWindow):
@@ -458,6 +528,12 @@ class GameWindow(QMainWindow):
         top_bar_layout.addSpacing(6)
         top_bar_layout.addWidget(quit_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
 
+        hint_banner = QLabel("Hint: black balloons are bombs. Click one and it's game over.", central)
+        hint_banner.setObjectName("hintBanner")
+        hint_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hint_banner.setWordWrap(True)
+        hint_banner.setFixedHeight(34)
+
         # Game stage placeholder
         stage = QFrame(central)
         stage.setObjectName("gameStage")
@@ -473,9 +549,12 @@ class GameWindow(QMainWindow):
         self._score = 0
         self._paused = False
 
+        self._spawn_interval_ms = 420
+        self._balloon_speed_px = 5
+
         self._spawn_timer = QTimer(self)
         self._spawn_timer.timeout.connect(self.spawn_balloon)
-        self._spawn_timer.start(900)
+        self._spawn_timer.start(self._spawn_interval_ms)
 
         self._move_timer = QTimer(self)
         self._move_timer.timeout.connect(self.update_balloons)
@@ -570,6 +649,7 @@ class GameWindow(QMainWindow):
             self._pop_sound = None
 
         root_layout.addWidget(top_bar)
+        root_layout.addWidget(hint_banner)
         root_layout.addWidget(stage, 1)
 
         self.setCentralWidget(central)
@@ -597,6 +677,13 @@ class GameWindow(QMainWindow):
                 color: #042d45;
                 font-size: 13px;
                 padding-left: 0px;
+                font-weight: 600;
+            }
+            QLabel#hintBanner {
+                color: #083344;
+                background: rgba(255, 255, 255, 0.42);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.30);
+                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton#toggleButton, QPushButton#quitButton {
@@ -646,7 +733,10 @@ class GameWindow(QMainWindow):
     def spawn_balloon(self) -> None:
         if getattr(self, "_paused", False):
             return
-        size = random.randint(40, 74)
+        bomb_unlocked = self._score >= 4
+        is_bomb = bomb_unlocked and random.random() < 0.22
+
+        size = random.randint(38, 68) if is_bomb else random.randint(42, 78)
         colors = [
             "#ff5d73",  # red pink
             "#ff9f43",  # orange
@@ -657,11 +747,32 @@ class GameWindow(QMainWindow):
             "#9d4edd",  # purple
             "#f72585",  # hot pink
         ]
-        color = random.choice(colors)
-        b = BalloonLabel(size, color, parent=self.stage)
+        color = "#1b1b1b" if is_bomb else random.choice(colors)
+        b = BalloonLabel(size, color, parent=self.stage, is_bomb=is_bomb)
         stage_w = max(1, self.stage.width())
-        x = random.randint(10, max(10, stage_w - size - 10))
         y = self.stage.height() + b.height()
+        min_gap = 2
+
+        placed_x = None
+        for _ in range(24):
+            x = random.randint(10, max(10, stage_w - b.width() - 10))
+            new_rect = QRect(x, y, b.width(), b.height())
+            touching = False
+            for existing in self._balloons:
+                expanded = existing.geometry().adjusted(-min_gap, -min_gap, min_gap, min_gap)
+                if expanded.intersects(new_rect):
+                    touching = True
+                    break
+            if not touching:
+                placed_x = x
+                break
+
+        if placed_x is None:
+            # Skip this spawn tick if we can't place without touching.
+            b.deleteLater()
+            return
+
+        x = placed_x
         b.move(x, y)
         b.show()
         self._balloons.append(b)
@@ -671,7 +782,7 @@ class GameWindow(QMainWindow):
             return
         to_remove = []
         for b in list(self._balloons):
-            new_y = b.y() - 4
+            new_y = b.y() - self._balloon_speed_px
             b.move(b.x(), new_y)
             # remove if off the top
             if new_y + b.height() < -20:
@@ -685,6 +796,24 @@ class GameWindow(QMainWindow):
 
         # clouds are static now; no per-frame movement
         pass
+
+    def _update_difficulty(self) -> None:
+        # Increase balloon movement and spawn rate as score grows.
+        if self._score >= 35:
+            speed, spawn_ms = 10, 300
+        elif self._score >= 24:
+            speed, spawn_ms = 9, 340
+        elif self._score >= 14:
+            speed, spawn_ms = 8, 380
+        else:
+            speed, spawn_ms = 6, 420
+
+        self._balloon_speed_px = speed
+        self._spawn_interval_ms = spawn_ms
+        try:
+            self._spawn_timer.setInterval(self._spawn_interval_ms)
+        except Exception:
+            pass
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -775,6 +904,7 @@ class GameWindow(QMainWindow):
         assets_dir = Path(__file__).resolve().parent / "assets" / "sounds"
         assets_dir.mkdir(parents=True, exist_ok=True)
         pop_path = assets_dir / "pop.wav"
+        burst_path = assets_dir / "burst.wav"
         # Prefer a user-supplied MP3 if present (balloonpopsound.mp3),
         # otherwise synthesize or use existing pop.wav as a fallback.
         mp3_path = assets_dir / "balloonpopsound.mp3"
@@ -795,6 +925,30 @@ class GameWindow(QMainWindow):
                 samples.append(val)
 
             with wave.open(str(pop_path), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(framerate)
+                frames = b"".join(struct.pack('<h', s) for s in samples)
+                wf.writeframes(frames)
+
+        if not burst_path.exists():
+            # synthesize a deeper, heavier burst for bomb balloons (mono, 22050Hz, 0.20s)
+            framerate = 22050
+            duration = 0.20
+            nframes = int(framerate * duration)
+            max_amp = 18000
+            import math
+
+            samples = []
+            for i in range(nframes):
+                t = i / framerate
+                env = math.exp(-10 * t)
+                noise = random.uniform(-1.0, 1.0)
+                low = math.sin(2 * math.pi * (90 + 40 * math.sin(10 * t)) * t)
+                val = int(((noise * 0.7) + (low * 0.9)) * env * max_amp)
+                samples.append(val)
+
+            with wave.open(str(burst_path), "wb") as wf:
                 wf.setnchannels(1)
                 wf.setsampwidth(2)
                 wf.setframerate(framerate)
@@ -842,6 +996,14 @@ class GameWindow(QMainWindow):
                 pass
         except Exception:
             self._pop_sound = None
+
+        try:
+            self._burst_sound = QSoundEffect(self)
+            self._burst_sound.setSource(QUrl.fromLocalFile(str(burst_path)))
+            self._burst_sound.setLoopCount(1)
+            self._burst_sound.setVolume(0.95)
+        except Exception:
+            self._burst_sound = None
         # Also prepare an OS-level fallback (macOS `afplay`) if available.
         try:
             import shutil
@@ -853,6 +1015,7 @@ class GameWindow(QMainWindow):
             self._pop_file = mp3_path
         else:
             self._pop_file = pop_path
+        self._burst_file = burst_path
         # debug log to console (useful during development)
         try:
             print("Pop sound file:", str(self._pop_file), "afplay:", self._afplay)
@@ -869,6 +1032,67 @@ class GameWindow(QMainWindow):
                     pass
         except Exception:
             pass
+
+        if getattr(balloon, "_is_bomb", False):
+            try:
+                self._spawn_timer.stop()
+                self._move_timer.stop()
+                self._paused = True
+                if getattr(self, "toggle_btn", None) is not None:
+                    self.toggle_btn.setChecked(True)
+                    self.toggle_btn.setText("▶")
+            except Exception:
+                pass
+
+            try:
+                if getattr(self, "_burst_sound", None) is not None:
+                    try:
+                        self._burst_sound.play()
+                    except Exception:
+                        QApplication.beep()
+                else:
+                    QApplication.beep()
+
+                effect = QGraphicsOpacityEffect(balloon)
+                balloon.setGraphicsEffect(effect)
+
+                opacity_anim = QPropertyAnimation(effect, b"opacity", parent=balloon)
+                opacity_anim.setDuration(210)
+                opacity_anim.setStartValue(1.0)
+                opacity_anim.setEndValue(0.0)
+                opacity_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+                geom = balloon.geometry()
+                center = geom.center()
+                end_rect = QRect(center.x(), center.y(), 0, 0)
+
+                geom_anim = QPropertyAnimation(balloon, b"geometry", parent=balloon)
+                geom_anim.setDuration(210)
+                geom_anim.setStartValue(geom)
+                geom_anim.setEndValue(end_rect)
+                geom_anim.setEasingCurve(QEasingCurve.Type.InBack)
+
+                balloon._opacity_anim = opacity_anim
+                balloon._geom_anim = geom_anim
+                balloon._effect = effect
+
+                def _after_burst() -> None:
+                    try:
+                        balloon.deleteLater()
+                    except Exception:
+                        pass
+                    self._show_game_over_dialog()
+
+                geom_anim.finished.connect(_after_burst)
+                opacity_anim.start()
+                geom_anim.start()
+            except Exception:
+                try:
+                    balloon.deleteLater()
+                except Exception:
+                    pass
+                self._show_game_over_dialog()
+            return
 
         # play a short audible feedback (pop sound if available)
         try:
@@ -950,6 +1174,40 @@ class GameWindow(QMainWindow):
             self.score_label.setText(str(self._score))
         except Exception:
             pass
+        self._update_difficulty()
+
+    def restart_game(self) -> None:
+        # Reset game state after game over and start fresh in the same window.
+        for b in list(self._balloons):
+            try:
+                b.deleteLater()
+            except Exception:
+                pass
+        self._balloons.clear()
+
+        self._score = 0
+        self.score_label.setText("0")
+        self._paused = False
+        if getattr(self, "toggle_btn", None) is not None:
+            self.toggle_btn.setChecked(False)
+            self.toggle_btn.setText("⏸")
+
+        self._update_difficulty()
+        try:
+            self._spawn_timer.start(self._spawn_interval_ms)
+            self._move_timer.start(40)
+        except Exception:
+            pass
+
+    def _show_game_over_dialog(self) -> None:
+        dlg = GameOverDialog(self)
+        center_x = self.geometry().center().x() - dlg.width() // 2
+        center_y = self.geometry().center().y() - dlg.height() // 2
+        dlg.move(center_x, center_y)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.restart_game()
+        else:
+            self.handle_quit()
 
     def handle_quit(self) -> None:
         # Close game and show Home if we were given a reference.
