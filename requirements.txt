@@ -1,0 +1,13 @@
+# Core Python dependency
+PyQt6>=6.6
+
+# Optional Python helpers / developer tooling
+# Note: The code may use external system audio players when the Qt multimedia
+# backend is not available. Examples include `afplay` (macOS) or `ffplay` (from
+# FFmpeg). Install these via your platform package manager (brew/apt/choco/etc.)
+ffmpeg-python>=0.6.0
+pyinstaller>=5.8
+typing_extensions>=4.6
+pytest>=7.4
+
+# End of file

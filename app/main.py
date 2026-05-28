@@ -1128,79 +1128,167 @@ class GameWindow(QMainWindow):
                     music_path = fallback_path
 
         self._music_path = music_path
+        # Choose backend based on platform and available system players.
         try:
             import shutil
             import threading
 
-            self._afplay = getattr(self, "_afplay", None) or shutil.which("afplay")
-            if self._afplay is None:
-                self._music_backend = "none"
-                return
-
-            self._music_backend = "afplay"
             self._music_output = None
             self._music_player = None
-            self._music_stop_event = threading.Event()
+            self._music_stop_event = None
             self._music_proc = None
+
+            plat = sys.platform
+            # macOS: prefer afplay (reliable on dev machine)
+            if plat == "darwin":
+                self._afplay = getattr(self, "_afplay", None) or shutil.which("afplay")
+                if self._afplay:
+                    self._music_backend = "afplay"
+                    self._music_stop_event = threading.Event()
+                    return
+                # fall through to Qt if afplay missing
+
+            # Try Qt backend first (works well on Windows if QtMultimedia is installed)
+            try:
+                self._music_output = QAudioOutput(self)
+                self._music_player = QMediaPlayer(self)
+                self._music_player.setAudioOutput(self._music_output)
+                self._music_player.setSource(QUrl.fromLocalFile(str(self._music_path)))
+                # Prefer using the Qt backend when available
+                self._music_backend = "qt"
+                return
+            except Exception:
+                self._music_output = None
+                self._music_player = None
+
+            # If Qt failed, try ffplay (common on Windows if ffmpeg is installed)
+            ffplay = shutil.which("ffplay")
+            if ffplay:
+                self._music_backend = "ffplay"
+                self._ffplay = ffplay
+                self._music_stop_event = threading.Event()
+                return
+
+            # As a last resort, if afplay exists use it (covers some Unix-like systems)
+            afplay = shutil.which("afplay")
+            if afplay:
+                self._afplay = afplay
+                self._music_backend = "afplay"
+                self._music_stop_event = threading.Event()
+                return
+
+            self._music_backend = "none"
         except Exception:
             self._music_backend = "none"
 
     def start_background_music(self) -> None:
         try:
-            if getattr(self, "_music_backend", "none") != "afplay":
-                return
+            backend = getattr(self, "_music_backend", "none")
             if getattr(self, "_music_muted", False):
                 return
 
-            import subprocess
-            import threading
-
-            if getattr(self, "_music_stop_event", None) is None:
-                self._music_stop_event = threading.Event()
-            self._music_stop_event.clear()
-
-            def _loop_music() -> None:
-                while not self._music_stop_event.is_set():
+            # Qt backend: use QMediaPlayer
+            if backend == "qt" and getattr(self, "_music_player", None) is not None:
+                try:
                     try:
-                        print("Starting background music:", str(self._music_path))
-                        self._music_proc = subprocess.Popen(
-                            [self._afplay, str(self._music_path)],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
-                        self._music_proc.wait()
+                        # If supported, set infinite looping
+                        self._music_player.setLoops(QMediaPlayer.Loops.Infinite)
                     except Exception:
-                        break
-                    if self._music_stop_event.wait(0.2):
-                        break
+                        pass
+                    self._music_player.setPosition(0)
+                    self._music_player.play()
+                except Exception:
+                    pass
+                return
 
-            if getattr(self, "_music_thread", None) is None or not self._music_thread.is_alive():
-                self._music_thread = threading.Thread(target=_loop_music, daemon=True)
-                self._music_thread.start()
+            # afplay backend (macOS)
+            if backend == "afplay":
+                import subprocess
+                import threading
+
+                if getattr(self, "_music_stop_event", None) is None:
+                    self._music_stop_event = threading.Event()
+                self._music_stop_event.clear()
+
+                def _loop_music() -> None:
+                    while not self._music_stop_event.is_set():
+                        try:
+                            print("Starting background music:", str(self._music_path))
+                            self._music_proc = subprocess.Popen(
+                                [self._afplay, str(self._music_path)],
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
+                            self._music_proc.wait()
+                        except Exception:
+                            break
+                        if self._music_stop_event.wait(0.2):
+                            break
+
+                if getattr(self, "_music_thread", None) is None or not self._music_thread.is_alive():
+                    self._music_thread = threading.Thread(target=_loop_music, daemon=True)
+                    self._music_thread.start()
+                return
+
+            # ffplay backend (cross-platform fallback if ffmpeg is installed)
+            if backend == "ffplay":
+                import subprocess
+
+                try:
+                    # spawn ffplay in loop mode; -nodisp hides video window
+                    self._music_proc = subprocess.Popen(
+                        [self._ffplay, "-nodisp", "-autoexit", "-loop", "0", "-loglevel", "quiet", str(self._music_path)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
+                    self._music_proc = None
+                return
         except Exception:
             pass
 
     def stop_background_music(self) -> None:
-        if getattr(self, "_music_backend", "none") != "afplay":
-            return
+        backend = getattr(self, "_music_backend", "none")
         try:
-            if getattr(self, "_music_stop_event", None) is not None:
-                self._music_stop_event.set()
-            if getattr(self, "_music_proc", None) is not None:
+            if backend == "afplay" or backend == "ffplay":
+                if getattr(self, "_music_stop_event", None) is not None:
+                    try:
+                        self._music_stop_event.set()
+                    except Exception:
+                        pass
+                if getattr(self, "_music_proc", None) is not None:
+                    try:
+                        self._music_proc.terminate()
+                    except Exception:
+                        pass
+                self._music_proc = None
+                return
+
+            if backend == "qt" and getattr(self, "_music_player", None) is not None:
                 try:
-                    self._music_proc.terminate()
+                    self._music_player.stop()
                 except Exception:
                     pass
-            self._music_proc = None
+                return
         except Exception:
             pass
 
     def toggle_music_mute(self) -> None:
         self._music_muted = not getattr(self, "_music_muted", False)
-        if self._music_muted:
-            self.stop_background_music()
-        elif not getattr(self, "_paused", False):
-            self.start_background_music()
+        backend = getattr(self, "_music_backend", "none")
+        try:
+            if backend == "qt" and getattr(self, "_music_output", None) is not None:
+                try:
+                    self._music_output.setVolume(0.0 if self._music_muted else 1.0)
+                except Exception:
+                    pass
+            else:
+                if self._music_muted:
+                    self.stop_background_music()
+                elif not getattr(self, "_paused", False):
+                    self.start_background_music()
+        except Exception:
+            pass
         if getattr(self, "mute_btn", None) is not None:
             self.mute_btn.setText("🔇" if self._music_muted else "🔊")
 
