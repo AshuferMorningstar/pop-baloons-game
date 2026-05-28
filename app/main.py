@@ -10,7 +10,7 @@ import struct
 from PyQt6.QtCore import QTimer, Qt, QRect, QPropertyAnimation, QEasingCurve, QUrl
 from PyQt6.QtGui import QFont, QGuiApplication, QPixmap, QPainter, QColor, QPainterPath, QPen
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
-from PyQt6.QtMultimedia import QSoundEffect
+from PyQt6.QtMultimedia import QSoundEffect, QMediaPlayer, QAudioOutput
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -572,7 +572,15 @@ class GameWindow(QMainWindow):
         quit_btn.setFixedSize(38, 30)
         quit_btn.clicked.connect(self.show_quit_confirm)
 
+        mute_btn = QPushButton("🔊", top_bar)
+        mute_btn.setObjectName("muteButton")
+        mute_btn.setFixedSize(38, 30)
+        mute_btn.clicked.connect(self.toggle_music_mute)
+        self.mute_btn = mute_btn
+
         top_bar_layout.addWidget(toggle_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
+        top_bar_layout.addSpacing(6)
+        top_bar_layout.addWidget(mute_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
         top_bar_layout.addSpacing(6)
         top_bar_layout.addWidget(quit_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
 
@@ -691,6 +699,20 @@ class GameWindow(QMainWindow):
         except Exception:
             self._pop_sound = None
 
+        # prepare looping background music for the game session
+        self._music_player = None
+        self._music_output = None
+        self._music_muted = False
+        self._music_backend = "none"
+        self._music_thread = None
+        self._music_stop_event = None
+        self._music_proc = None
+        try:
+            self.ensure_background_music()
+        except Exception:
+            self._music_player = None
+            self._music_output = None
+
         root_layout.addWidget(top_bar)
         root_layout.addWidget(stage, 1)
 
@@ -721,7 +743,7 @@ class GameWindow(QMainWindow):
                 padding-left: 0px;
                 font-weight: 600;
             }
-            QPushButton#toggleButton, QPushButton#quitButton {
+            QPushButton#toggleButton, QPushButton#muteButton, QPushButton#quitButton {
                 background: #ffffff;
                 border: 1px solid rgba(4,45,69,0.6);
                 border-radius: 8px;
@@ -730,7 +752,7 @@ class GameWindow(QMainWindow):
                 font-weight: 700;
                 font-size: 14px;
             }
-            QPushButton#toggleButton:hover, QPushButton#quitButton:hover {
+            QPushButton#toggleButton:hover, QPushButton#muteButton:hover, QPushButton#quitButton:hover {
                 background: #dff4ff;
             }
             QLabel#dashboardTitle {
@@ -860,6 +882,10 @@ class GameWindow(QMainWindow):
             QTimer.singleShot(50, self.position_clouds)
             self._clouds_positioned = True
 
+        # Start music as soon as the game window appears so the intro card
+        # and gameplay both share the same looping track.
+        self.start_background_music()
+
         if not getattr(self, "_game_started", False):
             self._game_started = True
             QTimer.singleShot(0, self.show_intro_card)
@@ -880,6 +906,7 @@ class GameWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._paused = False
             self._update_difficulty()
+            self.start_background_music()
             try:
                 self._spawn_timer.start(self._spawn_interval_ms)
                 self._move_timer.start(40)
@@ -1088,6 +1115,95 @@ class GameWindow(QMainWindow):
         except Exception:
             pass
 
+    def ensure_background_music(self) -> None:
+        assets_dir = Path(__file__).resolve().parent / "assets" / "sounds"
+        music_path = assets_dir / "backgroundsound.mp3"
+        if not music_path.exists():
+            fallback_path = assets_dir / "backgroundmusic.m4a"
+            if fallback_path.exists():
+                music_path = fallback_path
+            else:
+                fallback_path = assets_dir / "backgroundmusic.mp4"
+                if fallback_path.exists():
+                    music_path = fallback_path
+
+        self._music_path = music_path
+        try:
+            import shutil
+            import threading
+
+            self._afplay = getattr(self, "_afplay", None) or shutil.which("afplay")
+            if self._afplay is None:
+                self._music_backend = "none"
+                return
+
+            self._music_backend = "afplay"
+            self._music_output = None
+            self._music_player = None
+            self._music_stop_event = threading.Event()
+            self._music_proc = None
+        except Exception:
+            self._music_backend = "none"
+
+    def start_background_music(self) -> None:
+        try:
+            if getattr(self, "_music_backend", "none") != "afplay":
+                return
+            if getattr(self, "_music_muted", False):
+                return
+
+            import subprocess
+            import threading
+
+            if getattr(self, "_music_stop_event", None) is None:
+                self._music_stop_event = threading.Event()
+            self._music_stop_event.clear()
+
+            def _loop_music() -> None:
+                while not self._music_stop_event.is_set():
+                    try:
+                        print("Starting background music:", str(self._music_path))
+                        self._music_proc = subprocess.Popen(
+                            [self._afplay, str(self._music_path)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        self._music_proc.wait()
+                    except Exception:
+                        break
+                    if self._music_stop_event.wait(0.2):
+                        break
+
+            if getattr(self, "_music_thread", None) is None or not self._music_thread.is_alive():
+                self._music_thread = threading.Thread(target=_loop_music, daemon=True)
+                self._music_thread.start()
+        except Exception:
+            pass
+
+    def stop_background_music(self) -> None:
+        if getattr(self, "_music_backend", "none") != "afplay":
+            return
+        try:
+            if getattr(self, "_music_stop_event", None) is not None:
+                self._music_stop_event.set()
+            if getattr(self, "_music_proc", None) is not None:
+                try:
+                    self._music_proc.terminate()
+                except Exception:
+                    pass
+            self._music_proc = None
+        except Exception:
+            pass
+
+    def toggle_music_mute(self) -> None:
+        self._music_muted = not getattr(self, "_music_muted", False)
+        if self._music_muted:
+            self.stop_background_music()
+        elif not getattr(self, "_paused", False):
+            self.start_background_music()
+        if getattr(self, "mute_btn", None) is not None:
+            self.mute_btn.setText("🔇" if self._music_muted else "🔊")
+
     def pop_balloon(self, balloon: BalloonLabel) -> None:
         # remove from active list so update loop no longer moves it
         try:
@@ -1147,6 +1263,7 @@ class GameWindow(QMainWindow):
                         balloon.deleteLater()
                     except Exception:
                         pass
+                    self.stop_background_music()
                     self._show_game_over_dialog()
 
                 geom_anim.finished.connect(_after_burst)
@@ -1259,6 +1376,7 @@ class GameWindow(QMainWindow):
             self.toggle_btn.setText("⏸")
 
         self._update_difficulty()
+        self.start_background_music()
         try:
             self._spawn_timer.start(self._spawn_interval_ms)
             self._move_timer.start(40)
@@ -1278,6 +1396,7 @@ class GameWindow(QMainWindow):
     def handle_quit(self) -> None:
         # Close game and show Home if we were given a reference.
         try:
+            self.stop_background_music()
             self.close()
         finally:
             if getattr(self, "_home", None) is not None:
@@ -1298,6 +1417,7 @@ class GameWindow(QMainWindow):
             self.handle_quit()
 
     def closeEvent(self, event) -> None:  # show home when window is closed
+        self.stop_background_music()
         if getattr(self, "_home", None) is not None:
             try:
                 self._home.show()
