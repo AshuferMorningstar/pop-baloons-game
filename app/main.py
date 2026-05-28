@@ -702,7 +702,7 @@ class GameWindow(QMainWindow):
                             # Move one bottom cloud to the opposite corner at the lowest edge.
                             x = int(stage_w * 0.02) - w // 2 + random.randint(-8, 8)
                             y_min = int(stage_h * 0.88)
-                            y_max = stage_h - h + 2
+                            y_max = stage_h - c.height() + 2
                         else:
                             y_min = int(stage_h * 0.60)
                             y_max = max(int(stage_h - 50), int(stage_h * 0.90))
