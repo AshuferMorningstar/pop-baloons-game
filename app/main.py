@@ -147,9 +147,9 @@ class HomeWindow(QMainWindow):
 
         dashboard = QFrame(central)
         dashboard.setObjectName("dashboardBar")
-        dashboard.setFixedHeight(68)
+        dashboard.setFixedHeight(52)
         dashboard_layout = QHBoxLayout(dashboard)
-        dashboard_layout.setContentsMargins(20, 10, 20, 10)
+        dashboard_layout.setContentsMargins(12, 8, 12, 8)
 
         title = QLabel("Pop Balloon", dashboard)
         title.setObjectName("dashboardTitle")
@@ -276,9 +276,9 @@ class GameWindow(QMainWindow):
         # Top bar that contains a centered, narrower dashboard content
         top_bar = QFrame(central)
         top_bar.setObjectName("dashboardBar")
-        top_bar.setFixedHeight(68)
+        top_bar.setFixedHeight(52)
         top_bar_layout = QHBoxLayout(top_bar)
-        top_bar_layout.setContentsMargins(0, 0, 0, 0)
+        top_bar_layout.setContentsMargins(8, 6, 8, 6)
 
         # Left: compact score panel placed directly in the top bar
         top_bar_layout.addStretch(1)
@@ -292,14 +292,14 @@ class GameWindow(QMainWindow):
 
         score_panel = QFrame(top_bar)
         score_panel.setObjectName("scorePanel")
-        score_panel.setFixedSize(84, 36)
+        score_panel.setFixedSize(72, 32)
         score_layout = QHBoxLayout(score_panel)
         score_layout.setContentsMargins(8, 4, 8, 4)
 
         self.score_label = QLabel("0", score_panel)
         self.score_label.setObjectName("scoreLabel")
         score_font = QFont()
-        score_font.setPointSize(12)
+        score_font.setPointSize(11)
         score_font.setBold(True)
         self.score_label.setFont(score_font)
         score_layout.addWidget(self.score_label, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
@@ -313,7 +313,7 @@ class GameWindow(QMainWindow):
         # Single toggle button: shows ⏸ when running, ▶ when paused
         toggle_btn = QPushButton("⏸", top_bar)
         toggle_btn.setObjectName("toggleButton")
-        toggle_btn.setFixedSize(44, 34)
+        toggle_btn.setFixedSize(38, 30)
         toggle_btn.setCheckable(True)
         toggle_btn.setChecked(False)
         toggle_btn.clicked.connect(self.toggle_pause)
@@ -321,7 +321,7 @@ class GameWindow(QMainWindow):
 
         quit_btn = QPushButton("✖", top_bar)
         quit_btn.setObjectName("quitButton")
-        quit_btn.setFixedSize(44, 34)
+        quit_btn.setFixedSize(38, 30)
         quit_btn.clicked.connect(self.handle_quit)
 
         top_bar_layout.addWidget(toggle_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
