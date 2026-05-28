@@ -169,7 +169,7 @@ class HomeWindow(QMainWindow):
         start_button = QPushButton("Start Game", body)
         start_button.setObjectName("startButton")
         start_button.setFixedSize(190, 54)
-        start_button.clicked.connect(self.close)
+        start_button.clicked.connect(self.open_game)
 
         body_layout.addStretch(1)
         body_layout.addWidget(home_logo, alignment=Qt.AlignmentFlag.AlignCenter)
@@ -216,6 +216,192 @@ class HomeWindow(QMainWindow):
             }
             """
         )
+
+    def open_game(self) -> None:
+        # Hide the Home window and open the GameWindow in-place so macOS
+        # doesn't create a separate desktop/space for it.
+        self.hide()
+        # Lazily create the game window and show it. Keep a reference
+        # on self so it is not garbage-collected. Pass `self` so the
+        # game window can return to Home when quitting.
+        self.game_window = GameWindow(home=self)
+        self.game_window.show()
+        try:
+            self.game_window.raise_()
+            self.game_window.activateWindow()
+            self.game_window.setFocus()
+        except Exception:
+            pass
+
+
+class GameWindow(QMainWindow):
+    """Main game screen. Uses same background as HomeWindow and a
+    centered, narrower dashboard bar at the top.
+    """
+
+    def __init__(self, home: HomeWindow | None = None) -> None:
+        super().__init__()
+        self.setWindowTitle("Pop Balloons — Game")
+        self.setFixedSize(430, 760)
+        self._home = home
+
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            geometry = screen.availableGeometry()
+            self.move(
+                geometry.center().x() - self.width() // 2,
+                geometry.center().y() - self.height() // 2,
+            )
+
+        central = QWidget(self)
+        root_layout = QVBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        # Top bar that contains a centered, narrower dashboard content
+        top_bar = QFrame(central)
+        top_bar.setObjectName("dashboardBar")
+        top_bar.setFixedHeight(68)
+        top_bar_layout = QHBoxLayout(top_bar)
+        top_bar_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Left: compact score panel placed directly in the top bar
+        top_bar_layout.addStretch(1)
+
+        score_text = QLabel("Score", top_bar)
+        score_text.setObjectName("scoreText")
+        score_font = QFont()
+        score_font.setPointSize(12)
+        score_font.setBold(False)
+        score_text.setFont(score_font)
+
+        score_panel = QFrame(top_bar)
+        score_panel.setObjectName("scorePanel")
+        score_panel.setFixedSize(84, 36)
+        score_layout = QHBoxLayout(score_panel)
+        score_layout.setContentsMargins(8, 4, 8, 4)
+
+        score_label = QLabel("0", score_panel)
+        score_label.setObjectName("scoreLabel")
+        score_font = QFont()
+        score_font.setPointSize(12)
+        score_font.setBold(True)
+        score_label.setFont(score_font)
+        score_layout.addWidget(score_label, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+
+        top_bar_layout.addWidget(score_text, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addSpacing(6)
+        top_bar_layout.addWidget(score_panel, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addStretch(1)
+
+        # Right: controls placed directly into the top bar
+        pause_btn = QPushButton("⏸", top_bar)
+        pause_btn.setObjectName("pauseButton")
+        pause_btn.setFixedSize(44, 34)
+
+        play_btn = QPushButton("▶", top_bar)
+        play_btn.setObjectName("playButton")
+        play_btn.setFixedSize(44, 34)
+
+        quit_btn = QPushButton("✖", top_bar)
+        quit_btn.setObjectName("quitButton")
+        quit_btn.setFixedSize(44, 34)
+        quit_btn.clicked.connect(self.handle_quit)
+
+        top_bar_layout.addWidget(pause_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addSpacing(6)
+        top_bar_layout.addWidget(play_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addSpacing(6)
+        top_bar_layout.addWidget(quit_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addStretch(1)
+
+        # Game stage placeholder
+        stage = QFrame(central)
+        stage.setObjectName("gameStage")
+        stage_layout = QVBoxLayout(stage)
+        stage_layout.setContentsMargins(20, 20, 20, 20)
+        stage_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        placeholder = QLabel("Game area — balloons will appear here", stage)
+        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        stage_layout.addWidget(placeholder)
+
+        root_layout.addWidget(top_bar)
+        root_layout.addWidget(stage, 1)
+
+        self.setCentralWidget(central)
+
+        # Reuse similar styling as HomeWindow, and add a rule for dashboardContent
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background: #c9efff;
+            }
+            QFrame#dashboardBar {
+                background: rgba(255, 255, 255, 0.28);
+                border-bottom: 1px solid rgba(255, 255, 255, 0.45);
+            }
+            /* dashboardContent removed; using flat layout */
+            QFrame#scorePanel {
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 10px;
+            }
+            QLabel#scoreLabel {
+                color: #0f4c81;
+                font-size: 14px;
+            }
+            QLabel#scoreText {
+                color: #042d45;
+                font-size: 13px;
+                padding-left: 6px;
+                font-weight: 600;
+            }
+            QPushButton#pauseButton, QPushButton#playButton, QPushButton#quitButton {
+                background: #ffffff;
+                border: 1px solid rgba(4,45,69,0.6);
+                border-radius: 8px;
+                padding: 2px 6px;
+                color: #042d45;
+                font-weight: 700;
+                font-size: 14px;
+            }
+            QPushButton#pauseButton:hover, QPushButton#playButton:hover, QPushButton#quitButton:hover {
+                background: #dff4ff;
+            }
+            QLabel#dashboardTitle {
+                color: #0f4c81;
+            }
+            QFrame#gameStage {
+                background:
+                    radial-gradient(circle at 18% 16%, rgba(255, 255, 255, 0.92), transparent 16%),
+                    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.78), transparent 14%),
+                    linear-gradient(160deg, #e6f7ff, #9edcff 56%, #6ec5ff);
+            }
+            """
+        )
+
+    def handle_quit(self) -> None:
+        # Close game and show Home if we were given a reference.
+        try:
+            self.close()
+        finally:
+            if getattr(self, "_home", None) is not None:
+                try:
+                    self._home.show()
+                    self._home.raise_()
+                    self._home.activateWindow()
+                except Exception:
+                    pass
+
+    def closeEvent(self, event) -> None:  # show home when window is closed
+        if getattr(self, "_home", None) is not None:
+            try:
+                self._home.show()
+                self._home.raise_()
+                self._home.activateWindow()
+            except Exception:
+                pass
+        super().closeEvent(event)
 
 
 def main() -> None:
