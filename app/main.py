@@ -281,8 +281,6 @@ class GameWindow(QMainWindow):
         top_bar_layout.setContentsMargins(8, 6, 8, 6)
 
         # Left: compact score panel placed directly in the top bar
-        top_bar_layout.addStretch(1)
-
         score_text = QLabel("Score", top_bar)
         score_text.setObjectName("scoreText")
         score_font = QFont()
@@ -304,9 +302,10 @@ class GameWindow(QMainWindow):
         self.score_label.setFont(score_font)
         score_layout.addWidget(self.score_label, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
 
-        top_bar_layout.addWidget(score_text, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addWidget(score_text, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         top_bar_layout.addSpacing(6)
-        top_bar_layout.addWidget(score_panel, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addWidget(score_panel, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        # expanding spacer pushes controls to the right edge
         top_bar_layout.addStretch(1)
 
         # Right: controls placed directly into the top bar
@@ -324,10 +323,9 @@ class GameWindow(QMainWindow):
         quit_btn.setFixedSize(38, 30)
         quit_btn.clicked.connect(self.handle_quit)
 
-        top_bar_layout.addWidget(toggle_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_bar_layout.addWidget(toggle_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
         top_bar_layout.addSpacing(6)
-        top_bar_layout.addWidget(quit_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
-        top_bar_layout.addStretch(1)
+        top_bar_layout.addWidget(quit_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
 
         # Game stage placeholder
         stage = QFrame(central)
@@ -381,7 +379,7 @@ class GameWindow(QMainWindow):
             QLabel#scoreText {
                 color: #042d45;
                 font-size: 13px;
-                padding-left: 6px;
+                padding-left: 0px;
                 font-weight: 600;
             }
             QPushButton#toggleButton, QPushButton#quitButton {
