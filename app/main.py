@@ -8,7 +8,7 @@ import wave
 import struct
 
 from PyQt6.QtCore import QTimer, Qt, QRect, QPropertyAnimation, QEasingCurve, QUrl
-from PyQt6.QtGui import QFont, QGuiApplication, QPixmap, QPainter, QColor
+from PyQt6.QtGui import QFont, QGuiApplication, QPixmap, QPainter, QColor, QPainterPath, QPen
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 from PyQt6.QtMultimedia import QSoundEffect
 from PyQt6.QtWidgets import (
@@ -118,12 +118,56 @@ class SplashScreen(QDialog):
 
 
 class BalloonLabel(QLabel):
-    """Simple circular balloon that reports clicks to the window."""
+    """A balloon-shaped label that reports clicks to the window."""
 
     def __init__(self, size: int, color: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedSize(size, size)
-        self.setStyleSheet(f"background: {color}; border-radius: {size//2}px; border: 2px solid rgba(255,255,255,0.6);")
+        self._body_color = QColor(color)
+        self._balloon_width = size
+        self._balloon_height = int(size * 1.35)
+        self.setFixedSize(self._balloon_width, self._balloon_height)
+        self.setStyleSheet("background: transparent;")
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        w = self.width()
+        h = self.height()
+        body_h = int(h * 0.74)
+
+        # Draw a rounded balloon body with a gently tapered bottom.
+        path = QPainterPath()
+        path.addEllipse(w * 0.10, h * 0.04, w * 0.80, body_h * 0.88)
+        taper = QPainterPath()
+        taper.moveTo(w * 0.50, body_h * 0.96)
+        taper.cubicTo(w * 0.47, body_h * 1.02, w * 0.45, body_h * 1.10, w * 0.46, body_h * 1.14)
+        taper.lineTo(w * 0.54, body_h * 1.14)
+        taper.cubicTo(w * 0.55, body_h * 1.10, w * 0.53, body_h * 1.02, w * 0.50, body_h * 0.96)
+
+        painter.setPen(QPen(QColor(255, 255, 255, 200), 2))
+        painter.setBrush(self._body_color)
+        painter.drawPath(path)
+        painter.drawPath(taper)
+
+        # small highlight to make the balloon feel glossy
+        highlight = QColor(255, 255, 255, 75)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(highlight)
+        painter.drawEllipse(int(w * 0.24), int(h * 0.16), int(w * 0.18), int(h * 0.18))
+
+        # Knot and string at the bottom
+        knot = QPainterPath()
+        knot.moveTo(w * 0.50, body_h + h * 0.02)
+        knot.lineTo(w * 0.46, body_h + h * 0.09)
+        knot.lineTo(w * 0.54, body_h + h * 0.09)
+        knot.closeSubpath()
+        painter.setBrush(QColor(255, 255, 255, 180))
+        painter.drawPath(knot)
+
+        string_pen = QPen(QColor(255, 255, 255, 170), 1.4)
+        painter.setPen(string_pen)
+        painter.drawLine(int(w * 0.50), int(body_h + h * 0.10), int(w * 0.48), h - 2)
 
     def mousePressEvent(self, event) -> None:  # pop on click
         window = self.window()
@@ -608,7 +652,7 @@ class GameWindow(QMainWindow):
         b = BalloonLabel(size, color, parent=self.stage)
         stage_w = max(1, self.stage.width())
         x = random.randint(10, max(10, stage_w - size - 10))
-        y = self.stage.height() + size
+        y = self.stage.height() + b.height()
         b.move(x, y)
         b.show()
         self._balloons.append(b)
