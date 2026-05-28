@@ -646,8 +646,17 @@ class GameWindow(QMainWindow):
     def spawn_balloon(self) -> None:
         if getattr(self, "_paused", False):
             return
-        size = random.randint(28, 52)
-        colors = ["#ff7fb3", "#ffb37f", "#7fd3ff", "#b37fff", "#7fff9a"]
+        size = random.randint(40, 74)
+        colors = [
+            "#ff5d73",  # red pink
+            "#ff9f43",  # orange
+            "#ffd166",  # yellow
+            "#7bd389",  # green
+            "#56cfe1",  # cyan
+            "#5e60ce",  # indigo
+            "#9d4edd",  # purple
+            "#f72585",  # hot pink
+        ]
         color = random.choice(colors)
         b = BalloonLabel(size, color, parent=self.stage)
         stage_w = max(1, self.stage.width())
