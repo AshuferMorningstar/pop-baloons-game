@@ -126,6 +126,65 @@ class BalloonLabel(QLabel):
             window.pop_balloon(self)
 
 
+class ConfirmDialog(QDialog):
+    """Simple confirmation card asking the user to confirm quitting."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setFixedSize(320, 140)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        msg = QLabel("Do you really want to quit the game?", self)
+        msg.setObjectName("confirmMsg")
+        msg.setWordWrap(True)
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_font = QFont()
+        title_font.setPointSize(12)
+        title_font.setBold(True)
+        msg.setFont(title_font)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        cancel = QPushButton("Cancel", self)
+        cancel.clicked.connect(self.reject)
+        cancel.setFixedSize(96, 36)
+        cancel.setObjectName("confirmCancel")
+
+        confirm = QPushButton("Quit", self)
+        confirm.clicked.connect(self.accept)
+        confirm.setFixedSize(96, 36)
+        confirm.setObjectName("confirmQuit")
+
+        btn_row.addWidget(cancel)
+        btn_row.addSpacing(12)
+        btn_row.addWidget(confirm)
+        btn_row.addStretch(1)
+
+        layout.addStretch(1)
+        layout.addWidget(msg)
+        layout.addStretch(1)
+        layout.addLayout(btn_row)
+
+        self.setStyleSheet(
+            """
+            QDialog { background: rgba(255,255,255,0.98); border-radius: 14px; }
+            QLabel#confirmMsg { color: #083344; font-size: 13px; }
+            QPushButton#confirmQuit { background: #e53e3e; color: white; border-radius: 8px; }
+            QPushButton#confirmCancel { background: #ffffff; color: #083344; border: 1px solid rgba(4,45,69,0.12); border-radius: 8px; }
+            """
+        )
+
+        # ensure visibility for child widgets
+        msg.show()
+        cancel.show()
+        confirm.show()
+
+
 class HomeWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -321,7 +380,7 @@ class GameWindow(QMainWindow):
         quit_btn = QPushButton("✖", top_bar)
         quit_btn.setObjectName("quitButton")
         quit_btn.setFixedSize(38, 30)
-        quit_btn.clicked.connect(self.handle_quit)
+        quit_btn.clicked.connect(self.show_quit_confirm)
 
         top_bar_layout.addWidget(toggle_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
         top_bar_layout.addSpacing(6)
@@ -482,6 +541,15 @@ class GameWindow(QMainWindow):
                     self._home.activateWindow()
                 except Exception:
                     pass
+
+    def show_quit_confirm(self) -> None:
+        dlg = ConfirmDialog(self)
+        # center dialog on the game window
+        center_x = self.geometry().center().x() - dlg.width() // 2
+        center_y = self.geometry().center().y() - dlg.height() // 2
+        dlg.move(center_x, center_y)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.handle_quit()
 
     def closeEvent(self, event) -> None:  # show home when window is closed
         if getattr(self, "_home", None) is not None:
