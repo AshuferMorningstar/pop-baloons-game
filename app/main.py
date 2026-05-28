@@ -3,9 +3,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 import random
+import os
+import wave
+import struct
 
-from PyQt6.QtCore import QTimer, Qt
-from PyQt6.QtGui import QFont, QGuiApplication, QPixmap
+from PyQt6.QtCore import QTimer, Qt, QRect, QPropertyAnimation, QEasingCurve, QUrl
+from PyQt6.QtGui import QFont, QGuiApplication, QPixmap, QPainter, QColor
+from PyQt6.QtWidgets import QGraphicsOpacityEffect
+from PyQt6.QtMultimedia import QSoundEffect
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -124,6 +129,29 @@ class BalloonLabel(QLabel):
         window = self.window()
         if hasattr(window, "pop_balloon"):
             window.pop_balloon(self)
+
+
+class CloudLabel(QLabel):
+    """A decorative cloud made by drawing overlapping ellipses onto a pixmap."""
+
+    def __init__(self, width: int, height: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(width, height)
+        pix = QPixmap(width, height)
+        pix.fill(QColor(0, 0, 0, 0))
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor(255, 255, 255, 220)
+        p.setBrush(color)
+        p.setPen(QColor(255, 255, 255, 200))
+        # draw three overlapping ellipses
+        p.drawEllipse(int(width * 0.15), int(height * 0.3), int(width * 0.5), int(height * 0.6))
+        p.drawEllipse(int(width * 0.45), int(height * 0.1), int(width * 0.5), int(height * 0.8))
+        p.drawEllipse(int(width * -0.05), int(height * 0.1), int(width * 0.5), int(height * 0.7))
+        p.end()
+        self.setPixmap(pix)
+        # speed for drifting: negative moves left
+        self._speed = random.choice([-0.6, -0.4, -0.8])
 
 
 class ConfirmDialog(QDialog):
@@ -411,6 +439,53 @@ class GameWindow(QMainWindow):
         self._move_timer.timeout.connect(self.update_balloons)
         self._move_timer.start(40)
 
+        # add decorative clouds to the stage using crisp SVG assets
+        self._clouds: list[QLabel] = []
+        stage_w = max(1, self.stage.width())
+        # possible cloud sizes (will be picked randomly)
+        cloud_sizes = [(220, 60), (180, 48), (260, 72), (140, 40), (200, 56)]
+        assets_dir = Path(__file__).resolve().parent / "assets" / "images"
+        # create a few more clouds for depth; reuse available SVG assets
+        cloud_count = 6
+        for i in range(cloud_count):
+            w, h = random.choice(cloud_sizes)
+            # cycle through provided svg files (cloud1..cloud3)
+            svg_idx = (i % 3) + 1
+            svg_path = assets_dir / f"cloud{svg_idx}.svg"
+            c = QLabel(self.stage)
+            pix = QPixmap(str(svg_path))
+            if not pix.isNull():
+                pix = pix.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                c.setPixmap(pix)
+                c.setFixedSize(pix.size())
+            else:
+                c.setFixedSize(w, h)
+                c.setStyleSheet("background: rgba(255,255,255,0.9); border-radius: 20px;")
+            x = random.randint(0, max(0, stage_w - w))
+            y = random.randint(8, 90)
+            c.move(x, y)
+            c.show()
+            # slightly different speeds for parallax
+            # optional opacity to vary depth
+            try:
+                effect = QGraphicsOpacityEffect(c)
+                effect.setOpacity(random.uniform(0.65, 0.95))
+                c.setGraphicsEffect(effect)
+            except Exception:
+                pass
+            self._clouds.append(c)
+        
+        # mark clouds as not yet positioned; we'll place them when the
+        # window becomes visible (showEvent) to ensure correct stage size
+        self._clouds_positioned = False
+
+        # prepare pop sound (synthesizes a small wav if missing)
+        self._pop_sound = None
+        try:
+            self.ensure_pop_sound()
+        except Exception:
+            self._pop_sound = None
+
         root_layout.addWidget(top_bar)
         root_layout.addWidget(stage, 1)
 
@@ -516,13 +591,178 @@ class GameWindow(QMainWindow):
                 pass
             b.deleteLater()
 
-    def pop_balloon(self, balloon: BalloonLabel) -> None:
+        # clouds are static now; no per-frame movement
+        pass
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # position clouds once after the window is shown (so stage has final size)
+        if not getattr(self, "_clouds_positioned", False):
+            QTimer.singleShot(50, self.position_clouds)
+            self._clouds_positioned = True
+
+    def position_clouds(self) -> None:
+        # place clouds across the full width and stagger vertical positions
         try:
-            if balloon in self._balloons:
-                self._balloons.remove(balloon)
-            balloon.deleteLater()
+            stage_w = max(1, self.stage.width())
+            for c in self._clouds:
+                w = c.width()
+                x = random.randint(-20, max(0, stage_w - w + 20))
+                # vary y within a band near the top
+                y = random.randint(6, 120)
+                c.move(x, y)
         except Exception:
             pass
+
+    def ensure_pop_sound(self) -> None:
+        assets_dir = Path(__file__).resolve().parent / "assets" / "sounds"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        pop_path = assets_dir / "pop.wav"
+        # Prefer a user-supplied MP3 if present (balloonpopsound.mp3),
+        # otherwise synthesize or use existing pop.wav as a fallback.
+        mp3_path = assets_dir / "balloonpopsound.mp3"
+        if not pop_path.exists():
+            # synthesize a short noise burst WAV (mono, 22050Hz, 0.12s)
+            framerate = 22050
+            duration = 0.12
+            nframes = int(framerate * duration)
+            max_amp = 16000
+            import math
+
+            samples = []
+            for i in range(nframes):
+                t = i / framerate
+                # white noise with exponential decay envelope
+                env = math.exp(-6 * t)
+                val = int((random.uniform(-1.0, 1.0) * env) * max_amp)
+                samples.append(val)
+
+            with wave.open(str(pop_path), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(framerate)
+                frames = b"".join(struct.pack('<h', s) for s in samples)
+                wf.writeframes(frames)
+
+        # load with QSoundEffect. If an MP3 was added by the user, try that
+        # first and fall back to the WAV file if needed.
+        try:
+            self._pop_sound = QSoundEffect(self)
+            if mp3_path.exists():
+                try:
+                    self._pop_sound.setSource(QUrl.fromLocalFile(str(mp3_path)))
+                except Exception:
+                    # fall back to WAV if setting MP3 fails
+                    self._pop_sound.setSource(QUrl.fromLocalFile(str(pop_path)))
+            else:
+                self._pop_sound.setSource(QUrl.fromLocalFile(str(pop_path)))
+            self._pop_sound.setLoopCount(1)
+            self._pop_sound.setVolume(0.8)
+        except Exception:
+            self._pop_sound = None
+        # Also prepare an OS-level fallback (macOS `afplay`) if available.
+        try:
+            import shutil
+            self._afplay = shutil.which("afplay")
+        except Exception:
+            self._afplay = None
+        # record which file to play with fallback
+        if mp3_path.exists():
+            self._pop_file = mp3_path
+        else:
+            self._pop_file = pop_path
+        # debug log to console (useful during development)
+        try:
+            print("Pop sound file:", str(self._pop_file), "afplay:", self._afplay)
+        except Exception:
+            pass
+
+    def pop_balloon(self, balloon: BalloonLabel) -> None:
+        # remove from active list so update loop no longer moves it
+        try:
+            if balloon in self._balloons:
+                try:
+                    self._balloons.remove(balloon)
+                except ValueError:
+                    pass
+        except Exception:
+            pass
+
+        # play a short audible feedback (pop sound if available)
+        try:
+            # debug: log which playback methods are available
+            try:
+                print('pop_balloon: QSoundEffect=', getattr(self, '_pop_sound', None) is not None,
+                      'afplay=', getattr(self, '_afplay', None), 'file=', getattr(self, '_pop_file', None))
+            except Exception:
+                pass
+            if getattr(self, "_pop_sound", None) is not None:
+                try:
+                    self._pop_sound.play()
+                except Exception:
+                    QApplication.beep()
+            else:
+                QApplication.beep()
+        except Exception:
+            try:
+                QApplication.beep()
+            except Exception:
+                pass
+
+        # macOS CLI fallback: if `afplay` is available, play the file via subprocess
+        try:
+            if getattr(self, "_afplay", None):
+                import subprocess
+                # fire-and-forget so UI isn't blocked; allow overlapping pops
+                popfile = getattr(self, "_pop_file", None)
+                if popfile is None:
+                    popfile = Path(__file__).resolve().parent / "assets" / "sounds" / "pop.wav"
+                subprocess.Popen([self._afplay, str(popfile)])
+        except Exception:
+            pass
+
+        # add a small pop animation (scale down + fade out)
+        try:
+            effect = QGraphicsOpacityEffect(balloon)
+            balloon.setGraphicsEffect(effect)
+
+            # parent animations to the balloon so they are kept alive
+            opacity_anim = QPropertyAnimation(effect, b"opacity", parent=balloon)
+            opacity_anim.setDuration(260)
+            opacity_anim.setStartValue(1.0)
+            opacity_anim.setEndValue(0.0)
+            opacity_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+            geom = balloon.geometry()
+            center = geom.center()
+            end_rect = QRect(center.x(), center.y(), 0, 0)
+
+            geom_anim = QPropertyAnimation(balloon, b"geometry", parent=balloon)
+            geom_anim.setDuration(260)
+            geom_anim.setStartValue(geom)
+            geom_anim.setEndValue(end_rect)
+            geom_anim.setEasingCurve(QEasingCurve.Type.InBack)
+
+            # keep references on the balloon so Python doesn't GC them
+            balloon._opacity_anim = opacity_anim
+            balloon._geom_anim = geom_anim
+            balloon._effect = effect
+
+            def _cleanup():
+                try:
+                    balloon.deleteLater()
+                except Exception:
+                    pass
+
+            geom_anim.finished.connect(_cleanup)
+            opacity_anim.start()
+            geom_anim.start()
+        except Exception:
+            try:
+                balloon.deleteLater()
+            except Exception:
+                pass
+
         self._score += 1
         try:
             self.score_label.setText(str(self._score))
