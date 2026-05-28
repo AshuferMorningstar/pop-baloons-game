@@ -421,9 +421,7 @@ class GameWindow(QMainWindow):
         stage_layout.setContentsMargins(20, 20, 20, 20)
         stage_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        placeholder = QLabel("Game area — balloons will appear here", stage)
-        placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        stage_layout.addWidget(placeholder)
+        # Keep the stage visually clean; clouds and balloons are the only content.
 
         # Keep a reference to the stage and set up balloon timers
         self.stage = stage
@@ -448,21 +446,29 @@ class GameWindow(QMainWindow):
         # create a few more clouds for depth; reuse available SVG assets
         # create clouds per band with tailored counts, sizes and opacities
         # larger, fainter clouds near the bottom; smaller, crisper at the top
-        cloud_bands = {"top": 3, "middle": 4, "bottom": 3}
+        cloud_bands = {"top": 3, "middle": 3, "bottom": 2}
         for band, count in cloud_bands.items():
             for i in range(count):
                 w, h = random.choice(cloud_sizes)
                 # scale sizes by band: top larger (pops out of screen),
                 # middle smaller and subtle, bottom larger for depth.
                 if band == "bottom":
-                    w = int(w * 1.25)
-                    h = int(h * 1.25)
+                    if i == count - 1:
+                        w = int(w * 1.15)
+                        h = int(h * 1.15)
+                    else:
+                        w = int(w * 1.25)
+                        h = int(h * 1.25)
                 elif band == "top":
                     w = int(w * 1.2)
                     h = int(h * 1.2)
                 else:  # middle
-                    w = int(w * 0.75)
-                    h = int(h * 0.75)
+                    if i == count - 1:
+                        w = int(w * 1.02)
+                        h = int(h * 1.02)
+                    else:
+                        w = int(w * 0.75)
+                        h = int(h * 0.75)
                 # cycle through provided svg files
                 svg_idx = (i % 3) + 1
                 svg_path = assets_dir / f"cloud{svg_idx}.svg"
@@ -477,7 +483,10 @@ class GameWindow(QMainWindow):
                     c.setStyleSheet("background: rgba(255,255,255,0.9); border-radius: 20px;")
                 # allow top clouds to start slightly off-screen to the left
                 if band == "top":
-                    x = random.randint(-int(stage_w * 0.18), max(0, stage_w - w - 20))
+                    if i == 0:
+                        x = random.randint(-int(w * 0.60), -int(w * 0.45))
+                    else:
+                        x = random.randint(-int(stage_w * 0.18), max(0, stage_w - w - 20))
                 else:
                     x = random.randint(-20, max(0, stage_w - w + 20))
                 # assign band for later placement and variation
@@ -489,9 +498,15 @@ class GameWindow(QMainWindow):
                 try:
                     effect = QGraphicsOpacityEffect(c)
                     if band == "bottom":
-                        effect.setOpacity(random.uniform(0.4, 0.7))
+                        if i == count - 1:
+                            effect.setOpacity(random.uniform(0.38, 0.58))
+                        else:
+                            effect.setOpacity(random.uniform(0.4, 0.7))
                     elif band == "middle":
-                        effect.setOpacity(random.uniform(0.6, 0.85))
+                        if i == count - 1:
+                            effect.setOpacity(random.uniform(0.48, 0.68))
+                        else:
+                            effect.setOpacity(random.uniform(0.6, 0.85))
                     else:
                         effect.setOpacity(random.uniform(0.78, 0.99))
                     c.setGraphicsEffect(effect)
@@ -643,19 +658,22 @@ class GameWindow(QMainWindow):
                 # Bias horizontal placement by band: top=left/offscreen, middle=center, bottom=right.
                 # Use stable anchor slots so clouds spread apart instead of stacking vertically.
                 if band_name == "top":
-                    target_positions = [0.08, 0.18, 0.30]
+                    target_positions = [0.02, 0.18, 0.84]
                 elif band_name == "middle":
-                    target_positions = [0.38, 0.52, 0.66, 0.80]
+                    target_positions = [0.38, 0.50, 0.64]
                 else:
-                    target_positions = [0.52, 0.68, 0.84]
+                    target_positions = [0.58, 0.80]
 
                 for idx, c in enumerate(clouds):
                     w = c.width()
                     target = target_positions[min(idx, len(target_positions) - 1)]
 
                     if band_name == "top":
-                        # Keep only about 25% of the cloud visible inside the screen.
-                        x = int(-(w * 0.75)) + random.randint(-10, 10)
+                        # Keep a little more than half of the left cloud outside.
+                        if idx == 0:
+                            x = int(-(w * 0.58)) + random.randint(-10, 10)
+                        else:
+                            x = int(stage_w * target) - w // 2 + random.randint(-10, 10)
                     else:
                         # Spread clouds around their target slots with a small jitter.
                         target_x = int(stage_w * target) - w // 2
@@ -671,11 +689,23 @@ class GameWindow(QMainWindow):
                         x = min(x, int(stage_w * 0.15))
 
                     if band_name == "middle":
-                        y_min = int(stage_h * 0.26)
-                        y_max = int(stage_h * 0.54)
+                        if idx == len(clouds) - 1:
+                            # One middle cloud sits a bit lower, slightly right, bigger and fainter.
+                            x = int(stage_w * 0.60) - w // 2 + random.randint(-12, 12)
+                            y_min = int(stage_h * 0.34)
+                            y_max = int(stage_h * 0.48)
+                        else:
+                            y_min = int(stage_h * 0.26)
+                            y_max = int(stage_h * 0.54)
                     elif band_name == "bottom":
-                        y_min = int(stage_h * 0.60)
-                        y_max = max(int(stage_h - 50), int(stage_h * 0.90))
+                        if idx == len(clouds) - 1:
+                            # Move one bottom cloud to the opposite corner at the lowest edge.
+                            x = int(stage_w * 0.02) - w // 2 + random.randint(-8, 8)
+                            y_min = int(stage_h * 0.88)
+                            y_max = stage_h - h + 2
+                        else:
+                            y_min = int(stage_h * 0.60)
+                            y_max = max(int(stage_h - 50), int(stage_h * 0.90))
                     else:
                         y_min = int(stage_h * 0.02)
                         y_max = max(8, int(stage_h * 0.14))
