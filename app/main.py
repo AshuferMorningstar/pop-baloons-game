@@ -1065,7 +1065,7 @@ class GameWindow(QMainWindow):
             # a noticeable delay on the very first playback. We play the
             # effect once silently when it finishes loading, then restore
             # the desired volume.
-            self._pop_sound.setVolume(0.8)
+            self._pop_sound.setVolume(0.35)
             try:
                 def _prime(loaded: bool) -> None:
                     if loaded:
@@ -1074,7 +1074,7 @@ class GameWindow(QMainWindow):
                             self._pop_sound.setVolume(0.0)
                             self._pop_sound.play()
                             # restore volume shortly after priming
-                            QTimer.singleShot(60, lambda: self._pop_sound.setVolume(0.8))
+                            QTimer.singleShot(60, lambda: self._pop_sound.setVolume(0.35))
                         except Exception:
                             pass
                         try:
@@ -1306,7 +1306,7 @@ class GameWindow(QMainWindow):
                 popfile = getattr(self, "_pop_file", None)
                 if popfile is None:
                     popfile = Path(__file__).resolve().parent / "assets" / "sounds" / "pop.wav"
-                subprocess.Popen([self._afplay, str(popfile)])
+                subprocess.Popen([self._afplay, "-v", "0.35", str(popfile)])
         except Exception:
             pass
 
