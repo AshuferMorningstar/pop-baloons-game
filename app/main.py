@@ -484,8 +484,6 @@ class HomeWindow(QMainWindow):
         )
 
     def open_game(self) -> None:
-        # Hide the Home window and open the GameWindow in-place so macOS
-        # doesn't create a separate desktop/space for it.
         self.hide()
         # Lazily create the game window and show it. Keep a reference
         # on self so it is not garbage-collected. Pass `self` so the
@@ -586,6 +584,7 @@ class GameWindow(QMainWindow):
         stage_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # Keep the stage visually clean; clouds and balloons are the only content.
+        # The bomb hint is shown in a startup card instead of staying on the play field.
 
         # Keep a reference to the stage and set up balloon timers
         self.stage = stage
@@ -594,6 +593,7 @@ class GameWindow(QMainWindow):
         self._paused = False
         self._game_started = False
 
+        # Base pacing for the game; score-based difficulty updates this later.
         self._spawn_interval_ms = 320
         self._balloon_speed_px = 5
 
@@ -647,7 +647,7 @@ class GameWindow(QMainWindow):
                 else:
                     c.setFixedSize(w, h)
                     c.setStyleSheet("background: rgba(255,255,255,0.9); border-radius: 20px;")
-                # allow top clouds to start slightly off-screen to the left
+                # Allow top clouds to start slightly off-screen to the left.
                 if band == "top":
                     if i == 0:
                         x = random.randint(-int(w * 0.60), -int(w * 0.45))
@@ -768,6 +768,7 @@ class GameWindow(QMainWindow):
     def spawn_balloon(self) -> None:
         if getattr(self, "_paused", False):
             return
+        # Bomb balloons start appearing early so the player learns the rule quickly.
         bomb_unlocked = self._score >= 4
         is_bomb = bomb_unlocked and random.random() < 0.22
 
@@ -786,6 +787,7 @@ class GameWindow(QMainWindow):
         b = BalloonLabel(size, color, parent=self.stage, is_bomb=is_bomb)
         stage_w = max(1, self.stage.width())
         y = self.stage.height() + b.height()
+        # Keep balloons close but not overlapping.
         min_gap = 2
 
         placed_x = None
@@ -834,6 +836,7 @@ class GameWindow(QMainWindow):
 
     def _update_difficulty(self) -> None:
         # Increase balloon movement and spawn rate as score grows.
+        # These score thresholds define the difficulty jumps.
         if self._score >= 35:
             speed, spawn_ms = 10, 210
         elif self._score >= 24:
@@ -862,6 +865,7 @@ class GameWindow(QMainWindow):
             QTimer.singleShot(0, self.show_intro_card)
 
     def show_intro_card(self) -> None:
+        # Show the startup hint card before any balloons begin moving.
         self._paused = True
         try:
             self._move_timer.stop()
@@ -967,8 +971,7 @@ class GameWindow(QMainWindow):
         assets_dir.mkdir(parents=True, exist_ok=True)
         pop_path = assets_dir / "pop.wav"
         burst_path = assets_dir / "burst.wav"
-        # Prefer a user-supplied MP3 if present (balloonpopsound.mp3),
-        # otherwise synthesize or use existing pop.wav as a fallback.
+            # Prefer a user-supplied MP3 if present (balloonpopsound.mp3), otherwise synthesize or use existing pop.wav as a fallback.
         mp3_path = assets_dir / "balloonpopsound.mp3"
         if not pop_path.exists():
             # synthesize a short noise burst WAV (mono, 22050Hz, 0.12s)
@@ -1004,6 +1007,7 @@ class GameWindow(QMainWindow):
             samples = []
             for i in range(nframes):
                 t = i / framerate
+                # Heavier decay so the burst ends quickly.
                 env = math.exp(-10 * t)
                 noise = random.uniform(-1.0, 1.0)
                 low = math.sin(2 * math.pi * (90 + 40 * math.sin(10 * t)) * t)
