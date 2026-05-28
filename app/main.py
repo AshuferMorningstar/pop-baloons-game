@@ -657,7 +657,32 @@ class GameWindow(QMainWindow):
             else:
                 self._pop_sound.setSource(QUrl.fromLocalFile(str(pop_path)))
             self._pop_sound.setLoopCount(1)
+            # Set a sane default volume but prime the sound engine to avoid
+            # a noticeable delay on the very first playback. We play the
+            # effect once silently when it finishes loading, then restore
+            # the desired volume.
             self._pop_sound.setVolume(0.8)
+            try:
+                def _prime(loaded: bool) -> None:
+                    if loaded:
+                        try:
+                            # play silently to warm up the audio backend
+                            self._pop_sound.setVolume(0.0)
+                            self._pop_sound.play()
+                            # restore volume shortly after priming
+                            QTimer.singleShot(60, lambda: self._pop_sound.setVolume(0.8))
+                        except Exception:
+                            pass
+                        try:
+                            self._pop_sound.loadedChanged.disconnect(_prime)
+                        except Exception:
+                            pass
+
+                # connect priming handler; if already loaded the handler
+                # will be invoked immediately via the signal semantics.
+                self._pop_sound.loadedChanged.connect(_prime)
+            except Exception:
+                pass
         except Exception:
             self._pop_sound = None
         # Also prepare an OS-level fallback (macOS `afplay`) if available.
