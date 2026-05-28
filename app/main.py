@@ -174,11 +174,12 @@ class BalloonLabel(QLabel):
         if self._is_bomb:
             # use a skeleton emoji marker so bomb balloons are instantly recognizable
             skeleton_font = QFont()
-            skeleton_font.setPointSize(max(10, int(w * 0.22)))
+            skeleton_font.setPointSize(max(13, int(w * 0.30)))
             skeleton_font.setBold(True)
             painter.setFont(skeleton_font)
-            painter.setPen(QColor(245, 245, 245, 230))
-            painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, "💀")
+            painter.setPen(QColor(245, 245, 245, 135))
+            center_rect = QRect(0, 0, w, int(h * 0.76))
+            painter.drawText(center_rect, Qt.AlignmentFlag.AlignCenter, "💀")
 
     def mousePressEvent(self, event) -> None:  # pop on click
         window = self.window()
@@ -323,6 +324,55 @@ class GameOverDialog(QDialog):
             QLabel#gameOverMsg { color: #083344; font-size: 13px; }
             QPushButton#playAgainButton { background: #1e7e34; color: white; border-radius: 8px; }
             QPushButton#gameOverQuitButton { background: #ffffff; color: #083344; border: 1px solid rgba(4,45,69,0.2); border-radius: 8px; }
+            """
+        )
+
+
+class IntroDialog(QDialog):
+    """Startup hint card shown before the game begins."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setModal(True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setFixedSize(360, 170)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        title = QLabel("Before You Start", self)
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        tf = QFont()
+        tf.setPointSize(15)
+        tf.setBold(True)
+        title.setFont(tf)
+
+        msg = QLabel("Black balloons are bombs. Click one and the game is over.", self)
+        msg.setWordWrap(True)
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        msg.setObjectName("introMsg")
+
+        ok_btn = QPushButton("Start", self)
+        ok_btn.setFixedSize(108, 38)
+        ok_btn.setObjectName("introStartButton")
+        ok_btn.clicked.connect(self.accept)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
+        btn_row.addWidget(ok_btn)
+        btn_row.addStretch(1)
+
+        layout.addWidget(title)
+        layout.addWidget(msg)
+        layout.addStretch(1)
+        layout.addLayout(btn_row)
+
+        self.setStyleSheet(
+            """
+            QDialog { background: rgba(255,255,255,0.98); border-radius: 14px; }
+            QLabel#introMsg { color: #083344; font-size: 13px; }
+            QPushButton#introStartButton { background: #1e7e34; color: white; border-radius: 8px; }
             """
         )
 
@@ -528,12 +578,6 @@ class GameWindow(QMainWindow):
         top_bar_layout.addSpacing(6)
         top_bar_layout.addWidget(quit_btn, alignment=Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
 
-        hint_banner = QLabel("Hint: black balloons are bombs. Click one and it's game over.", central)
-        hint_banner.setObjectName("hintBanner")
-        hint_banner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint_banner.setWordWrap(True)
-        hint_banner.setFixedHeight(34)
-
         # Game stage placeholder
         stage = QFrame(central)
         stage.setObjectName("gameStage")
@@ -548,17 +592,16 @@ class GameWindow(QMainWindow):
         self._balloons: list[BalloonLabel] = []
         self._score = 0
         self._paused = False
+        self._game_started = False
 
-        self._spawn_interval_ms = 420
+        self._spawn_interval_ms = 320
         self._balloon_speed_px = 5
 
         self._spawn_timer = QTimer(self)
         self._spawn_timer.timeout.connect(self.spawn_balloon)
-        self._spawn_timer.start(self._spawn_interval_ms)
 
         self._move_timer = QTimer(self)
         self._move_timer.timeout.connect(self.update_balloons)
-        self._move_timer.start(40)
 
         # add decorative clouds to the stage using crisp SVG assets
         self._clouds: list[QLabel] = []
@@ -649,7 +692,6 @@ class GameWindow(QMainWindow):
             self._pop_sound = None
 
         root_layout.addWidget(top_bar)
-        root_layout.addWidget(hint_banner)
         root_layout.addWidget(stage, 1)
 
         self.setCentralWidget(central)
@@ -677,13 +719,6 @@ class GameWindow(QMainWindow):
                 color: #042d45;
                 font-size: 13px;
                 padding-left: 0px;
-                font-weight: 600;
-            }
-            QLabel#hintBanner {
-                color: #083344;
-                background: rgba(255, 255, 255, 0.42);
-                border-bottom: 1px solid rgba(255, 255, 255, 0.30);
-                font-size: 12px;
                 font-weight: 600;
             }
             QPushButton#toggleButton, QPushButton#quitButton {
@@ -800,13 +835,13 @@ class GameWindow(QMainWindow):
     def _update_difficulty(self) -> None:
         # Increase balloon movement and spawn rate as score grows.
         if self._score >= 35:
-            speed, spawn_ms = 10, 300
+            speed, spawn_ms = 10, 210
         elif self._score >= 24:
-            speed, spawn_ms = 9, 340
+            speed, spawn_ms = 9, 240
         elif self._score >= 14:
-            speed, spawn_ms = 8, 380
+            speed, spawn_ms = 8, 275
         else:
-            speed, spawn_ms = 6, 420
+            speed, spawn_ms = 6, 320
 
         self._balloon_speed_px = speed
         self._spawn_interval_ms = spawn_ms
@@ -821,6 +856,33 @@ class GameWindow(QMainWindow):
         if not getattr(self, "_clouds_positioned", False):
             QTimer.singleShot(50, self.position_clouds)
             self._clouds_positioned = True
+
+        if not getattr(self, "_game_started", False):
+            self._game_started = True
+            QTimer.singleShot(0, self.show_intro_card)
+
+    def show_intro_card(self) -> None:
+        self._paused = True
+        try:
+            self._move_timer.stop()
+            self._spawn_timer.stop()
+        except Exception:
+            pass
+
+        dlg = IntroDialog(self)
+        center_x = self.geometry().center().x() - dlg.width() // 2
+        center_y = self.geometry().center().y() - dlg.height() // 2
+        dlg.move(center_x, center_y)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._paused = False
+            self._update_difficulty()
+            try:
+                self._spawn_timer.start(self._spawn_interval_ms)
+                self._move_timer.start(40)
+            except Exception:
+                pass
+        else:
+            self.handle_quit()
 
     def position_clouds(self) -> None:
         # place clouds across the full width and stagger vertical positions
