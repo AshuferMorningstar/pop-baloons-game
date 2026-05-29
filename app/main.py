@@ -808,12 +808,14 @@ class GameWindow(QMainWindow):
         b = BalloonLabel(size, color, parent=self.stage, is_bomb=is_bomb)
         stage_w = max(1, self.stage.width())
         y = self.stage.height() + b.height()
-        # Keep balloons close but not overlapping.
-        min_gap = 2
+        # Keep balloons very close but not overlapping.
+        # Reduce minimum gap so balloons can appear near each other.
+        min_gap = 0
 
         placed_x = None
-        for _ in range(24):
-            x = random.randint(10, max(10, stage_w - b.width() - 10))
+        # increase attempts to find a tight spot and reduce side padding
+        for _ in range(48):
+            x = random.randint(6, max(6, stage_w - b.width() - 6))
             new_rect = QRect(x, y, b.width(), b.height())
             touching = False
             for existing in self._balloons:
@@ -856,9 +858,9 @@ class GameWindow(QMainWindow):
         pass
 
     def _update_difficulty(self) -> None:
-        # Increase balloon speed by 1 every 10 score points.
+        # Increase balloon speed by 2 every 10 score points.
         # There is no upper cap, so the game keeps accelerating.
-        self._balloon_speed_px = 5 + (self._score // 10)
+        self._balloon_speed_px = 5 + 2 * (self._score // 10)
         try:
             self._spawn_timer.setInterval(self._spawn_interval_ms)
         except Exception:
