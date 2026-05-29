@@ -789,9 +789,9 @@ class GameWindow(QMainWindow):
     def spawn_balloon(self) -> None:
         if getattr(self, "_paused", False):
             return
-        # Bomb balloons start appearing early so the player learns the rule quickly.
-        bomb_unlocked = self._score >= 4
-        is_bomb = bomb_unlocked and random.random() < 0.22
+        # Bomb balloons appear from the start and become more common so they show up early.
+        bomb_unlocked = self._score >= 0
+        is_bomb = bomb_unlocked and random.random() < 0.32
 
         size = random.randint(38, 68) if is_bomb else random.randint(42, 78)
         colors = [
@@ -856,19 +856,9 @@ class GameWindow(QMainWindow):
         pass
 
     def _update_difficulty(self) -> None:
-        # Increase balloon movement and spawn rate as score grows.
-        # These score thresholds define the difficulty jumps.
-        if self._score >= 35:
-            speed, spawn_ms = 10, 210
-        elif self._score >= 24:
-            speed, spawn_ms = 9, 240
-        elif self._score >= 14:
-            speed, spawn_ms = 8, 275
-        else:
-            speed, spawn_ms = 6, 320
-
-        self._balloon_speed_px = speed
-        self._spawn_interval_ms = spawn_ms
+        # Increase balloon speed by 1 every 10 score points.
+        # There is no upper cap, so the game keeps accelerating.
+        self._balloon_speed_px = 5 + (self._score // 10)
         try:
             self._spawn_timer.setInterval(self._spawn_interval_ms)
         except Exception:
