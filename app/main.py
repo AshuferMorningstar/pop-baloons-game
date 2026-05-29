@@ -601,7 +601,8 @@ class GameWindow(QMainWindow):
         self._game_started = False
 
         # Base pacing for the game; score-based difficulty updates this later.
-        self._spawn_interval_ms = 320
+        # Lowered spawn interval so balloons appear more frequently.
+        self._spawn_interval_ms = 160
         self._balloon_speed_px = 5
 
         self._spawn_timer = QTimer(self)
@@ -808,14 +809,14 @@ class GameWindow(QMainWindow):
         b = BalloonLabel(size, color, parent=self.stage, is_bomb=is_bomb)
         stage_w = max(1, self.stage.width())
         y = self.stage.height() + b.height()
-        # Keep balloons very close but not overlapping.
-        # Reduce minimum gap so balloons can appear near each other.
-        min_gap = 0
+        # Keep balloons very close; allow a tiny visual overlap (min_gap=-1)
+        # so they can appear nearer without major clipping.
+        min_gap = -1
 
         placed_x = None
         # increase attempts to find a tight spot and reduce side padding
-        for _ in range(48):
-            x = random.randint(6, max(6, stage_w - b.width() - 6))
+        for _ in range(64):
+            x = random.randint(4, max(4, stage_w - b.width() - 4))
             new_rect = QRect(x, y, b.width(), b.height())
             touching = False
             for existing in self._balloons:
